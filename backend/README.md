@@ -22,7 +22,7 @@ A simple Flask API backend for BearHacks2025.
    python app.py
    ```
 
-The server will start on http://localhost:5000.
+The server will start on http://localhost:8080.
 
 ## Endpoints
 
