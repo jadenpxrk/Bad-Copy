@@ -170,10 +170,11 @@ const Game = () => {
   };
 
   const handleCopyGameLink = () => {
-    const gameUrl = `${window.location.origin}/game/${gameId}`;
-    navigator.clipboard.writeText(gameUrl);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    if (gameId) {
+      navigator.clipboard.writeText(gameId);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }
   };
 
   const handlePlayAgain = () => {
@@ -242,12 +243,12 @@ const Game = () => {
               )}
 
               <div className="p-4 mb-6 bg-base-200 rounded-lg">
-                <p className="mb-2">Share this link with a friend:</p>
+                <p className="mb-2">Share this game ID with a friend:</p>
                 <div className="join w-full">
                   <input
                     type="text"
                     readOnly
-                    value={`${window.location.origin}/game/${gameId}`}
+                    value={gameId}
                     className="input input-bordered join-item w-full"
                   />
                   <button
@@ -320,7 +321,34 @@ const Game = () => {
               <Timer
                 initialTime={30}
                 isRunning={gameStatus === "active"}
-                onTimeUp={() => {}}
+                onTimeUp={() => {
+                  if (gameStatus === "active") {
+                    // Final save of the drawing before finishing
+                    if (gameId && playerId && latestDrawing) {
+                      // Wrap in try/catch to ensure status change happens even if submit fails
+                      try {
+                        socketService.submitDrawing(
+                          gameId,
+                          playerId,
+                          latestDrawing
+                        );
+                      } catch (e) {
+                        console.error("Error submitting final drawing:", e);
+                      }
+                    }
+
+                    // Set finished status
+                    setGameStatus("finished");
+
+                    // Force a state update after a short delay to ensure
+                    // the component re-renders with the new game status
+                    setTimeout(() => {
+                      if (gameStatus === "active") {
+                        setGameStatus("finished");
+                      }
+                    }, 500);
+                  }
+                }}
               />
             </div>
             <div className="card bg-base-100 shadow-xl">
