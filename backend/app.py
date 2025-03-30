@@ -5,6 +5,14 @@ import uuid
 import random
 from dotenv import load_dotenv
 import os
+import tensorflow as tf
+import numpy as np
+from PIL import Image
+import io
+import base64
+from scipy.spatial.distance import cosine
+import requests
+from io import BytesIO
 
 load_dotenv()
 
@@ -17,6 +25,79 @@ reference_images = [
     "https://images.unsplash.com/photo-1598755257130-c2aaca1f061c?q=80&w=1000&auto=format&fit=crop",
 ]
 
+# Load the model once at startup
+def load_model():
+    # Use EfficientNetV2B0 without top layer (no classification head)
+    base_model = tf.keras.applications.EfficientNetV2B0(
+        include_top=False, 
+        weights='imagenet', 
+        input_shape=(224, 224, 3),
+        pooling='avg'
+    )
+    
+    # We'll use the model up to the global average pooling layer
+    model = tf.keras.Model(inputs=base_model.input, outputs=base_model.output)
+    return model
+
+# Initialize the model
+model = None
+
+# Image preprocessing
+def preprocess_image(image_data, is_url=False):
+    if is_url:
+        response = requests.get(image_data)
+        img = Image.open(BytesIO(response.content))
+    else:
+        # Remove the base64 prefix if present
+        if 'base64,' in image_data:
+            image_data = image_data.split('base64,')[1]
+        
+        # Decode base64 image
+        img_bytes = base64.b64decode(image_data)
+        img = Image.open(BytesIO(img_bytes))
+    
+    # Convert to RGB if needed
+    if img.mode != 'RGB':
+        img = img.convert('RGB')
+    
+    # Resize to the required input shape
+    img = img.resize((224, 224))
+    
+    # Convert to array and preprocess for EfficientNet
+    img_array = tf.keras.preprocessing.image.img_to_array(img)
+    img_array = tf.expand_dims(img_array, 0)
+    img_array = tf.keras.applications.efficientnet_v2.preprocess_input(img_array)
+    
+    return img_array
+
+# Extract embeddings
+def get_embedding(image_data, is_url=False):
+    global model
+    
+    # Load model if it hasn't been loaded yet
+    if model is None:
+        model = load_model()
+    
+    # Preprocess the image
+    processed_img = preprocess_image(image_data, is_url)
+    
+    # Get embeddings
+    embedding = model.predict(processed_img)
+    
+    # Normalize the embedding (L2 norm)
+    embedding = embedding / np.linalg.norm(embedding)
+    
+    return embedding
+
+# Calculate similarity score
+def get_similarity_score(embedding1, embedding2):
+    # Calculate cosine similarity (1 - cosine distance)
+    similarity = 1 - cosine(embedding1.flatten(), embedding2.flatten())
+    
+    # Convert to a 0-100 score
+    score = int(similarity * 100)
+    
+    return score
 
 def create_app():
     app = Flask(__name__)
@@ -177,6 +258,46 @@ def create_app():
             game["status"] = "finished"
             socketio.emit("time_up", to=game_id)
 
+    @app.route("/test/semantic", methods=["GET"])
+    def test_semantic():
+        try:
+            # Create a white test image
+            test_image1 = Image.new('RGB', (224, 224), 'white')
+            buffered1 = io.BytesIO()
+            test_image1.save(buffered1, format="PNG")
+            drawing_data1 = base64.b64encode(buffered1.getvalue()).decode()
+            
+            # Create a black test image
+            test_image2 = Image.new('RGB', (224, 224), 'black')
+            buffered2 = io.BytesIO()
+            test_image2.save(buffered2, format="PNG")
+            drawing_data2 = base64.b64encode(buffered2.getvalue()).decode()
+            
+            # Get reference image
+            ref_image_url = reference_images[0]
+            
+            # Get embeddings
+            ref_embedding = get_embedding(ref_image_url, is_url=True)
+            drawing1_embedding = get_embedding(drawing_data1)
+            drawing2_embedding = get_embedding(drawing_data2)
+            
+            # Calculate scores
+            score1 = get_similarity_score(ref_embedding, drawing1_embedding)
+            score2 = get_similarity_score(ref_embedding, drawing2_embedding)
+            
+            return jsonify({
+                "reference_image": ref_image_url,
+                "white_square_score": score1,
+                "black_square_score": score2,
+                "status": "success"
+            })
+            
+        except Exception as e:
+            return jsonify({
+                "error": str(e),
+                "status": "error"
+            }), 500
+
     @app.errorhandler(404)
     def not_found(error):
         return jsonify(error="Resource not found"), 404
@@ -186,23 +307,62 @@ def create_app():
         return jsonify(error="Internal server error"), 500
 
     def calculate_results(game):
-        # Placeholder for similarity calculation
-        # For now, just assign random scores
+        global model
+        
+        # Ensure model is loaded
+        if model is None:
+            model = load_model()
+            
         player1_id = game["players"][0]["id"]
         player2_id = game["players"][1]["id"]
-
-        # Static scores for testing
-        player1_score = 75
-        player2_score = 68
-
-        winner = player1_id if player1_score > player2_score else player2_id
-
-        return {
-            "scores": {player1_id: player1_score, player2_id: player2_score},
-            "winner": winner,
-            "reference_image": game["reference_image"],
-            "drawings": game["drawings"],
-        }
+        
+        # Get the reference image
+        ref_image_url = game["reference_image"]
+        
+        try:
+            # Get embeddings for the reference image
+            ref_embedding = get_embedding(ref_image_url, is_url=True)
+            
+            # Get embeddings for player drawings
+            player1_drawing = game["drawings"].get(player1_id)
+            player2_drawing = game["drawings"].get(player2_id)
+            
+            # Calculate scores
+            player1_score = 0
+            player2_score = 0
+            
+            if player1_drawing:
+                player1_embedding = get_embedding(player1_drawing)
+                player1_score = get_similarity_score(ref_embedding, player1_embedding)
+                
+            if player2_drawing:
+                player2_embedding = get_embedding(player2_drawing)
+                player2_score = get_similarity_score(ref_embedding, player2_embedding)
+                
+            # Determine winner
+            winner = player1_id if player1_score > player2_score else player2_id
+            
+            return {
+                "scores": {player1_id: player1_score, player2_id: player2_score},
+                "winner": winner,
+                "reference_image": game["reference_image"],
+                "drawings": game["drawings"],
+            }
+            
+        except Exception as e:
+            print(f"Error calculating results: {str(e)}")
+            # Fallback to random scores in case of error
+            player1_score = 75
+            player2_score = 68
+            winner = player1_id if player1_score > player2_score else player2_id
+            
+            return {
+                "scores": {player1_id: player1_score, player2_id: player2_score},
+                "winner": winner,
+                "reference_image": game["reference_image"],
+                "drawings": game["drawings"],
+                "error": str(e)
+            }
 
     return socketio, app
 
