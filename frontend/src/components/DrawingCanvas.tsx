@@ -10,80 +10,96 @@ const DrawingCanvas = ({ onSave, isTimerRunning }: DrawingCanvasProps) => {
   const canvasRef = useRef<ReactSketchCanvasRef>(null);
   const [canDraw, setCanDraw] = useState(true);
   const [hasDrawing, setHasDrawing] = useState(false);
+  const saveTimeoutRef = useRef<number | null>(null);
 
   // Save drawing periodically when timer is running
   useEffect(() => {
     if (!isTimerRunning || !hasDrawing) return;
 
     // Auto-save drawing every 5 seconds while timer is running
+    // Use a ref to track the timeout to avoid re-renders
     const saveInterval = setInterval(() => {
-      console.log("Auto-saving drawing...");
-      handleSave();
+      if (saveTimeoutRef.current) {
+        clearTimeout(saveTimeoutRef.current);
+      }
+
+      // Use a timeout to avoid blocking the main thread during drawing
+      saveTimeoutRef.current = setTimeout(() => {
+        handleSave();
+      }, 100);
     }, 5000);
 
-    return () => clearInterval(saveInterval);
-  }, [isTimerRunning, hasDrawing]);
-
-  // Listen for timer-almost-up event
-  useEffect(() => {
-    const handleTimerAlmostUp = () => {
-      console.log("Timer almost up, saving final drawing...");
-      if (hasDrawing) {
-        handleSave();
+    return () => {
+      clearInterval(saveInterval);
+      if (saveTimeoutRef.current) {
+        clearTimeout(saveTimeoutRef.current);
       }
     };
-
-    document.addEventListener("timer-almost-up", handleTimerAlmostUp);
-
-    return () => {
-      document.removeEventListener("timer-almost-up", handleTimerAlmostUp);
-    };
-  }, [hasDrawing]);
+  }, [isTimerRunning, hasDrawing]);
 
   useEffect(() => {
-    console.log("DrawingCanvas - Timer running state changed:", isTimerRunning);
+    // Only update the canDraw state when timer state changes
+    // to avoid unnecessary re-renders during drawing
     setCanDraw(isTimerRunning);
 
     if (!isTimerRunning && hasDrawing) {
-      console.log("DrawingCanvas - Timer stopped, saving drawing");
-      // Save immediately when timer stops
-      handleSave();
+      // Save immediately when timer stops using a timeout to
+      // avoid blocking the timer
+      if (saveTimeoutRef.current) {
+        clearTimeout(saveTimeoutRef.current);
+      }
+
+      saveTimeoutRef.current = setTimeout(() => {
+        handleSave();
+      }, 100);
     }
   }, [isTimerRunning, hasDrawing]);
 
   const handleChange = () => {
-    setHasDrawing(true);
+    if (!hasDrawing) {
+      setHasDrawing(true);
+    }
   };
 
   const handleSave = async () => {
-    console.log("DrawingCanvas - handleSave called");
     if (canvasRef.current) {
       try {
         const data = await canvasRef.current.exportImage("png");
-        console.log("DrawingCanvas - Drawing exported successfully");
         onSave(data);
       } catch (error) {
         console.error("Error saving drawing:", error);
       }
-    } else {
-      console.error("DrawingCanvas - Canvas reference is null");
     }
   };
 
   const handleClear = () => {
-    // Use setTimeout to make the operation non-blocking
-    setTimeout(() => {
-      canvasRef.current?.clearCanvas();
-      setTimeout(handleSave, 50);
-    }, 0);
+    if (canvasRef.current) {
+      canvasRef.current.clearCanvas();
+
+      // Use a delay before saving to ensure canvas is cleared
+      if (saveTimeoutRef.current) {
+        clearTimeout(saveTimeoutRef.current);
+      }
+
+      saveTimeoutRef.current = setTimeout(() => {
+        handleSave();
+      }, 100);
+    }
   };
 
   const handleUndo = () => {
-    // Use setTimeout to make the operation non-blocking
-    setTimeout(() => {
-      canvasRef.current?.undo();
-      setTimeout(handleSave, 50);
-    }, 0);
+    if (canvasRef.current) {
+      canvasRef.current.undo();
+
+      // Use a delay before saving to ensure undo is completed
+      if (saveTimeoutRef.current) {
+        clearTimeout(saveTimeoutRef.current);
+      }
+
+      saveTimeoutRef.current = setTimeout(() => {
+        handleSave();
+      }, 100);
+    }
   };
 
   return (

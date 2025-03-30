@@ -96,13 +96,16 @@ const Home = () => {
                 <h2 className="card-title text-xl font-bold text-primary justify-center">
                   Join a Game
                 </h2>
-                <p>Enter a game ID to join an existing game</p>
+                <p>Enter a game ID provided by your friend</p>
                 <div className="form-control">
+                  <label className="label">
+                    <span className="label-text font-medium">Game ID</span>
+                  </label>
                   <input
                     type="text"
                     value={gameId}
                     onChange={(e) => setGameId(e.target.value)}
-                    placeholder="Enter game ID"
+                    placeholder="Paste game ID here"
                     className="input input-bordered w-full"
                     required
                   />

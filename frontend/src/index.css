@@ -12,3 +12,23 @@
     transform: scale(1);
   }
 }
+
+/* Ensure the drawing area maintains focus and doesn't create jank */
+.rsc-canvas {
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  -ms-user-select: none;
+}
+
+/* Prevent text selection which might interfere with drawing */
+.canvas-container {
+  touch-action: none;
+  user-select: none;
+}
+
+/* Ensure the Timer component renders consistently */
+.stats {
+  will-change: contents;
+}
