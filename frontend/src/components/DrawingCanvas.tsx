@@ -24,15 +24,36 @@ const DrawingCanvas = ({ onSave, isTimerRunning }: DrawingCanvasProps) => {
     return () => clearInterval(saveInterval);
   }, [isTimerRunning, hasDrawing]);
 
+  // Listen for timer-almost-up event
+  useEffect(() => {
+    const handleTimerAlmostUp = () => {
+      console.log("Timer almost up, saving final drawing...");
+      if (hasDrawing) {
+        handleSave();
+      }
+    };
+
+    document.addEventListener("timer-almost-up", handleTimerAlmostUp);
+
+    return () => {
+      document.removeEventListener("timer-almost-up", handleTimerAlmostUp);
+    };
+  }, [hasDrawing]);
+
   useEffect(() => {
     console.log("DrawingCanvas - Timer running state changed:", isTimerRunning);
     setCanDraw(isTimerRunning);
 
     if (!isTimerRunning && hasDrawing) {
       console.log("DrawingCanvas - Timer stopped, saving drawing");
+      // Save immediately when timer stops
       handleSave();
     }
-  }, [isTimerRunning, onSave, hasDrawing]);
+  }, [isTimerRunning, hasDrawing]);
+
+  const handleChange = () => {
+    setHasDrawing(true);
+  };
 
   const handleSave = async () => {
     console.log("DrawingCanvas - handleSave called");
@@ -50,11 +71,19 @@ const DrawingCanvas = ({ onSave, isTimerRunning }: DrawingCanvasProps) => {
   };
 
   const handleClear = () => {
-    canvasRef.current?.clearCanvas();
+    // Use setTimeout to make the operation non-blocking
+    setTimeout(() => {
+      canvasRef.current?.clearCanvas();
+      setTimeout(handleSave, 50);
+    }, 0);
   };
 
   const handleUndo = () => {
-    canvasRef.current?.undo();
+    // Use setTimeout to make the operation non-blocking
+    setTimeout(() => {
+      canvasRef.current?.undo();
+      setTimeout(handleSave, 50);
+    }, 0);
   };
 
   return (
@@ -70,7 +99,7 @@ const DrawingCanvas = ({ onSave, isTimerRunning }: DrawingCanvasProps) => {
             canvasColor="white"
             exportWithBackgroundImage={false}
             withTimestamp={false}
-            onChange={() => setHasDrawing(true)}
+            onChange={handleChange}
           />
         </div>
       </div>

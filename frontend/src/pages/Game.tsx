@@ -101,6 +101,11 @@ const Game = () => {
 
     socketService.onTimeUp(() => {
       console.log("Time is up, setting game status to finished");
+      // Make a final save of the drawing before finishing
+      if (gameId && playerId && latestDrawing) {
+        console.log("Saving final drawing before game ends");
+        socketService.submitDrawing(gameId, playerId, latestDrawing);
+      }
       setGameStatus("finished");
 
       // Set a timeout to handle case when results aren't received
@@ -214,9 +219,7 @@ const Game = () => {
   return (
     <div className="p-5">
       <div className="text-center mb-8">
-        <h1 className="text-4xl font-bold text-primary mb-5">
-          Speed Sketch Showdown
-        </h1>
+        <h1 className="text-4xl font-bold text-primary mb-5">Bad Copy</h1>
         {(gameStatus === "waiting" || gameStatus === "ready") && (
           <div className="card max-w-2xl mx-auto bg-base-100 shadow-xl">
             <div className="card-body">

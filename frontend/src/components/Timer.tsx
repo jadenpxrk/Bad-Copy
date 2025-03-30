@@ -17,6 +17,11 @@ const Timer = ({ initialTime, isRunning, onTimeUp }: TimerProps) => {
 
     const timerId = setInterval(() => {
       setTimeLeft((prevTime) => {
+        // When we reach 3 seconds, notify for final drawing save
+        if (prevTime === 3) {
+          document.dispatchEvent(new CustomEvent("timer-almost-up"));
+        }
+
         if (prevTime <= 1) {
           clearInterval(timerId);
           onTimeUp();
