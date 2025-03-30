@@ -297,26 +297,7 @@ const Game = () => {
 
       {gameStatus === "active" && (
         <div className="flex flex-col items-center">
-          <div className="flex flex-col w-full max-w-3xl mx-auto gap-6">
-            <div className="card bg-base-100 shadow-xl">
-              <div className="card-body">
-                <h3 className="card-title text-xl font-bold mb-4 text-primary">
-                  Reference Image
-                </h3>
-                {referenceImage ? (
-                  <img
-                    src={referenceImage}
-                    alt="Reference"
-                    className="w-full max-h-80 object-contain border border-base-300 rounded-lg"
-                  />
-                ) : (
-                  <div className="w-full h-40 flex items-center justify-center bg-base-200 rounded-lg">
-                    <span className="loading loading-spinner loading-md"></span>
-                    <span className="ml-2">Loading reference image...</span>
-                  </div>
-                )}
-              </div>
-            </div>
+          <div className="flex flex-col w-full max-w-5xl mx-auto gap-6">
             <div className="flex justify-center my-5">
               <Timer
                 initialTime={30}
@@ -351,15 +332,36 @@ const Game = () => {
                 }}
               />
             </div>
-            <div className="card bg-base-100 shadow-xl">
-              <div className="card-body">
-                <h3 className="card-title text-xl font-bold mb-4 text-primary">
-                  Your Drawing
-                </h3>
-                <DrawingCanvas
-                  onSave={handleDrawingSave}
-                  isTimerRunning={gameStatus === "active"}
-                />
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div className="card bg-base-100 shadow-xl">
+                <div className="card-body">
+                  <h3 className="card-title text-xl font-bold mb-4 text-primary">
+                    Reference Image
+                  </h3>
+                  {referenceImage ? (
+                    <img
+                      src={referenceImage}
+                      alt="Reference"
+                      className="w-full max-h-80 object-contain border border-base-300 rounded-lg"
+                    />
+                  ) : (
+                    <div className="w-full h-40 flex items-center justify-center bg-base-200 rounded-lg">
+                      <span className="loading loading-spinner loading-md"></span>
+                      <span className="ml-2">Loading reference image...</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+              <div className="card bg-base-100 shadow-xl">
+                <div className="card-body">
+                  <h3 className="card-title text-xl font-bold mb-4 text-primary">
+                    Your Drawing
+                  </h3>
+                  <DrawingCanvas
+                    onSave={handleDrawingSave}
+                    isTimerRunning={gameStatus === "active"}
+                  />
+                </div>
               </div>
             </div>
           </div>

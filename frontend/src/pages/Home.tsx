@@ -44,15 +44,15 @@ const Home = () => {
   };
 
   return (
-    <div className="hero min-h-screen bg-base-200">
+    <div className="hero max-h-screen w-full">
       <div className="hero-content text-center">
-        <div className="max-w-3xl">
+        <div className="max-w-2xl">
           <h1 className="text-5xl font-bold text-primary mb-5">Bad Copy</h1>
           <p className="text-lg mb-8">
             Compete to draw a reference image in 30 seconds!
           </p>
 
-          <div className="form-control w-full mb-6">
+          <div className="form-control flex flex-col gap-2 w-full mb-6">
             <label className="label">
               <span className="label-text font-semibold">Your Name</span>
             </label>
@@ -67,8 +67,8 @@ const Home = () => {
             />
           </div>
 
-          <div className="flex flex-wrap gap-6 mt-5 justify-center">
-            <div className="card w-96 bg-base-100 shadow-xl">
+          <div className="flex flex-col md:flex-row gap-6 mt-5 justify-center items-center md:items-stretch">
+            <div className="card w-full bg-base-200 shadow-xl">
               <div className="card-body">
                 <h2 className="card-title text-xl font-bold text-primary justify-center">
                   Start a New Game
@@ -91,13 +91,13 @@ const Home = () => {
               </div>
             </div>
 
-            <div className="card w-96 bg-base-100 shadow-xl">
+            <div className="card w-full bg-base-200 shadow-xl">
               <div className="card-body">
                 <h2 className="card-title text-xl font-bold text-primary justify-center">
                   Join a Game
                 </h2>
                 <p>Enter a game ID provided by your friend</p>
-                <div className="form-control">
+                <div className="form-control flex flex-col gap-2">
                   <label className="label">
                     <span className="label-text font-medium">Game ID</span>
                   </label>
