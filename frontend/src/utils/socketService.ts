@@ -93,6 +93,14 @@ class SocketService {
     });
   }
 
+  startGame(gameId: string, playerId: string): void {
+    console.log(`Starting game ${gameId} by player ${playerId}`);
+    this.socket?.emit("start_game", {
+      game_id: gameId,
+      player_id: playerId,
+    });
+  }
+
   onPlayerJoined(callback: (data: Player) => void): void {
     this.socket?.on("player_joined", callback);
   }

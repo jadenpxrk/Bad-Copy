@@ -17,6 +17,11 @@ const Timer = ({ initialTime, isRunning, onTimeUp }: TimerProps) => {
 
     const timerId = setInterval(() => {
       setTimeLeft((prevTime) => {
+        // When we reach 3 seconds, notify for final drawing save
+        if (prevTime === 3) {
+          document.dispatchEvent(new CustomEvent("timer-almost-up"));
+        }
+
         if (prevTime <= 1) {
           clearInterval(timerId);
           onTimeUp();
@@ -35,14 +40,25 @@ const Timer = ({ initialTime, isRunning, onTimeUp }: TimerProps) => {
       .padStart(2, "0")}:${(seconds % 60).toString().padStart(2, "0")}`;
   };
 
+  const getTimerClass = () => {
+    if (timeLeft < 10) return "text-error";
+    if (timeLeft < 20) return "text-warning";
+    return "text-success";
+  };
+
   return (
     <div className="text-center">
-      <div
-        className={`text-4xl font-bold px-8 py-4 bg-white rounded-lg shadow-md ${
-          timeLeft < 10 ? "text-red-600 animate-pulse" : ""
-        }`}
-      >
-        {formatTime(timeLeft)}
+      <div className="stats shadow">
+        <div className="stat">
+          <div className="stat-title">Time Remaining</div>
+          <div
+            className={`stat-value ${getTimerClass()} ${
+              timeLeft < 10 ? "animate-pulse" : ""
+            }`}
+          >
+            {formatTime(timeLeft)}
+          </div>
+        </div>
       </div>
     </div>
   );

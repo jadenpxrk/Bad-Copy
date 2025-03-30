@@ -18,12 +18,92 @@ load_dotenv()
 
 # Game state
 games = {}  # Dictionary to store active games by ID
+
+# Load reference images from environment variables
 reference_images = [
-    "https://images.unsplash.com/photo-1575936123452-b67c3203c357?q=80&w=1000&auto=format&fit=crop",
-    "https://images.unsplash.com/photo-1591871937573-74dbba515c4c?q=80&w=1000&auto=format&fit=crop",
-    "https://images.unsplash.com/photo-1529778873920-4da4926a72c2?q=80&w=1000&auto=format&fit=crop",
-    "https://images.unsplash.com/photo-1598755257130-c2aaca1f061c?q=80&w=1000&auto=format&fit=crop",
+    os.getenv("REFERENCE_IMAGE_1"),
+    os.getenv("REFERENCE_IMAGE_2"),
+    os.getenv("REFERENCE_IMAGE_3"),
+    os.getenv("REFERENCE_IMAGE_4"),
 ]
+# Filter out None values (in case some environment variables are missing)
+reference_images = [img for img in reference_images if img]
+
+
+# Load the model once at startup
+def load_model():
+    # Use EfficientNetV2B0 without top layer (no classification head)
+    base_model = tf.keras.applications.EfficientNetV2B0(
+        include_top=False, weights="imagenet", input_shape=(224, 224, 3), pooling="avg"
+    )
+
+    # We'll use the model up to the global average pooling layer
+    model = tf.keras.Model(inputs=base_model.input, outputs=base_model.output)
+    return model
+
+
+# Initialize the model
+model = None
+
+
+# Image preprocessing
+def preprocess_image(image_data, is_url=False):
+    if is_url:
+        response = requests.get(image_data)
+        img = Image.open(BytesIO(response.content))
+    else:
+        # Remove the base64 prefix if present
+        if "base64," in image_data:
+            image_data = image_data.split("base64,")[1]
+
+        # Decode base64 image
+        img_bytes = base64.b64decode(image_data)
+        img = Image.open(BytesIO(img_bytes))
+
+    # Convert to RGB if needed
+    if img.mode != "RGB":
+        img = img.convert("RGB")
+
+    # Resize to the required input shape
+    img = img.resize((224, 224))
+
+    # Convert to array and preprocess for EfficientNet
+    img_array = tf.keras.preprocessing.image.img_to_array(img)
+    img_array = tf.expand_dims(img_array, 0)
+    img_array = tf.keras.applications.efficientnet_v2.preprocess_input(img_array)
+
+    return img_array
+
+
+# Extract embeddings
+def get_embedding(image_data, is_url=False):
+    global model
+
+    # Load model if it hasn't been loaded yet
+    if model is None:
+        model = load_model()
+
+    # Preprocess the image
+    processed_img = preprocess_image(image_data, is_url)
+
+    # Get embeddings
+    embedding = model.predict(processed_img)
+
+    # Normalize the embedding (L2 norm)
+    embedding = embedding / np.linalg.norm(embedding)
+
+    return embedding
+
+
+# Calculate similarity score
+def get_similarity_score(embedding1, embedding2):
+    # Calculate cosine similarity (1 - cosine distance)
+    similarity = 1 - cosine(embedding1.flatten(), embedding2.flatten())
+
+    # Convert to a 0-100 score, ensuring it's never negative
+    score = max(0, int(similarity * 100))
+
+    return score
 
 # Load the model once at startup
 def load_model():
@@ -172,19 +252,40 @@ def create_app():
 
         emit("player_joined", player, to=game_id)
 
+        # Update game status to ready when two players have joined
         if len(game["players"]) == 2:
-            game["status"] = "active"
-            reference_image = game["reference_image"]
-            socketio.emit(
-                "game_start", {"reference_image": reference_image}, to=game_id
-            )
-
-            # Set timer for 30 seconds
-            socketio.sleep(30)
-            game["status"] = "finished"
-            socketio.emit("time_up", to=game_id)
+            game["status"] = "ready"
 
         return {"player_id": player_id}
+
+    @socketio.on("start_game")
+    def handle_start_game(data):
+        game_id = data.get("game_id")
+        player_id = data.get("player_id")
+
+        if game_id not in games:
+            emit("error", {"message": "Game not found"})
+            return
+
+        game = games[game_id]
+
+        # Verify this is from the first player (creator)
+        if not game["players"] or player_id != game["players"][0]["id"]:
+            emit("error", {"message": "Only the game creator can start the game"})
+            return
+
+        if len(game["players"]) < 2:
+            emit("error", {"message": "Need at least 2 players to start"})
+            return
+
+        game["status"] = "active"
+        reference_image = game["reference_image"]
+        socketio.emit("game_start", {"reference_image": reference_image}, to=game_id)
+
+        # Set timer for 30 seconds
+        socketio.sleep(30)
+        game["status"] = "finished"
+        socketio.emit("time_up", to=game_id)
 
     @socketio.on("submit_drawing")
     def handle_submit_drawing(data):
@@ -235,10 +336,12 @@ def create_app():
             to=game_id,
         )
 
+        # If both players are ready and one is the creator, set status to ready
         if len(game["ready_for_next"]) == 2:
-            # Reset game for new round
-            game["status"] = "active"
+            # Reset game for new round but require manual start
+            game["status"] = "ready"
             game["drawings"] = {}
+            # Reset the ready_for_next set
             game["ready_for_next"] = set()
 
             # Ensure we pick a different reference image than the previous one
@@ -249,14 +352,24 @@ def create_app():
 
             game["reference_image"] = random.choice(available_images)
 
+            # Start the new game
             socketio.emit(
                 "game_start", {"reference_image": game["reference_image"]}, to=game_id
             )
 
-            # Set timer for 30 seconds
-            socketio.sleep(30)
-            game["status"] = "finished"
-            socketio.emit("time_up", to=game_id)
+            # Set timer for 30 seconds in a non-blocking way
+            def end_game_after_timeout():
+                socketio.sleep(30)
+                if game_id in games:  # Check if game still exists
+                    games[game_id]["status"] = "finished"
+                    socketio.emit("time_up", to=game_id)
+
+            # Start the timer in a background thread
+            import threading
+
+            timer_thread = threading.Thread(target=end_game_after_timeout)
+            timer_thread.daemon = True
+            timer_thread.start()
 
     @app.route("/test/semantic", methods=["GET"])
     def test_semantic():
@@ -308,60 +421,60 @@ def create_app():
 
     def calculate_results(game):
         global model
-        
+
         # Ensure model is loaded
         if model is None:
             model = load_model()
-            
+
         player1_id = game["players"][0]["id"]
         player2_id = game["players"][1]["id"]
-        
+
         # Get the reference image
         ref_image_url = game["reference_image"]
-        
+
         try:
             # Get embeddings for the reference image
             ref_embedding = get_embedding(ref_image_url, is_url=True)
-            
+
             # Get embeddings for player drawings
             player1_drawing = game["drawings"].get(player1_id)
             player2_drawing = game["drawings"].get(player2_id)
-            
+
             # Calculate scores
             player1_score = 0
             player2_score = 0
-            
+
             if player1_drawing:
                 player1_embedding = get_embedding(player1_drawing)
                 player1_score = get_similarity_score(ref_embedding, player1_embedding)
-                
+
             if player2_drawing:
                 player2_embedding = get_embedding(player2_drawing)
                 player2_score = get_similarity_score(ref_embedding, player2_embedding)
-                
+
             # Determine winner
             winner = player1_id if player1_score > player2_score else player2_id
-            
+
             return {
                 "scores": {player1_id: player1_score, player2_id: player2_score},
                 "winner": winner,
                 "reference_image": game["reference_image"],
                 "drawings": game["drawings"],
             }
-            
+
         except Exception as e:
             print(f"Error calculating results: {str(e)}")
             # Fallback to random scores in case of error
             player1_score = 75
             player2_score = 68
             winner = player1_id if player1_score > player2_score else player2_id
-            
+
             return {
                 "scores": {player1_id: player1_score, player2_id: player2_score},
                 "winner": winner,
                 "reference_image": game["reference_image"],
                 "drawings": game["drawings"],
-                "error": str(e)
+                "error": str(e),
             }
 
     return socketio, app
