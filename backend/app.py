@@ -105,6 +105,79 @@ def get_similarity_score(embedding1, embedding2):
 
     return score
 
+# Load the model once at startup
+def load_model():
+    # Use EfficientNetV2B0 without top layer (no classification head)
+    base_model = tf.keras.applications.EfficientNetV2B0(
+        include_top=False, 
+        weights='imagenet', 
+        input_shape=(224, 224, 3),
+        pooling='avg'
+    )
+    
+    # We'll use the model up to the global average pooling layer
+    model = tf.keras.Model(inputs=base_model.input, outputs=base_model.output)
+    return model
+
+# Initialize the model
+model = None
+
+# Image preprocessing
+def preprocess_image(image_data, is_url=False):
+    if is_url:
+        response = requests.get(image_data)
+        img = Image.open(BytesIO(response.content))
+    else:
+        # Remove the base64 prefix if present
+        if 'base64,' in image_data:
+            image_data = image_data.split('base64,')[1]
+        
+        # Decode base64 image
+        img_bytes = base64.b64decode(image_data)
+        img = Image.open(BytesIO(img_bytes))
+    
+    # Convert to RGB if needed
+    if img.mode != 'RGB':
+        img = img.convert('RGB')
+    
+    # Resize to the required input shape
+    img = img.resize((224, 224))
+    
+    # Convert to array and preprocess for EfficientNet
+    img_array = tf.keras.preprocessing.image.img_to_array(img)
+    img_array = tf.expand_dims(img_array, 0)
+    img_array = tf.keras.applications.efficientnet_v2.preprocess_input(img_array)
+    
+    return img_array
+
+# Extract embeddings
+def get_embedding(image_data, is_url=False):
+    global model
+    
+    # Load model if it hasn't been loaded yet
+    if model is None:
+        model = load_model()
+    
+    # Preprocess the image
+    processed_img = preprocess_image(image_data, is_url)
+    
+    # Get embeddings
+    embedding = model.predict(processed_img)
+    
+    # Normalize the embedding (L2 norm)
+    embedding = embedding / np.linalg.norm(embedding)
+    
+    return embedding
+
+# Calculate similarity score
+def get_similarity_score(embedding1, embedding2):
+    # Calculate cosine similarity (1 - cosine distance)
+    similarity = 1 - cosine(embedding1.flatten(), embedding2.flatten())
+    
+    # Convert to a 0-100 score
+    score = int(similarity * 100)
+    
+    return score
 
 def create_app():
     app = Flask(__name__)
@@ -297,6 +370,46 @@ def create_app():
             timer_thread = threading.Thread(target=end_game_after_timeout)
             timer_thread.daemon = True
             timer_thread.start()
+
+    @app.route("/test/semantic", methods=["GET"])
+    def test_semantic():
+        try:
+            # Create a white test image
+            test_image1 = Image.new('RGB', (224, 224), 'white')
+            buffered1 = io.BytesIO()
+            test_image1.save(buffered1, format="PNG")
+            drawing_data1 = base64.b64encode(buffered1.getvalue()).decode()
+            
+            # Create a black test image
+            test_image2 = Image.new('RGB', (224, 224), 'black')
+            buffered2 = io.BytesIO()
+            test_image2.save(buffered2, format="PNG")
+            drawing_data2 = base64.b64encode(buffered2.getvalue()).decode()
+            
+            # Get reference image
+            ref_image_url = reference_images[0]
+            
+            # Get embeddings
+            ref_embedding = get_embedding(ref_image_url, is_url=True)
+            drawing1_embedding = get_embedding(drawing_data1)
+            drawing2_embedding = get_embedding(drawing_data2)
+            
+            # Calculate scores
+            score1 = get_similarity_score(ref_embedding, drawing1_embedding)
+            score2 = get_similarity_score(ref_embedding, drawing2_embedding)
+            
+            return jsonify({
+                "reference_image": ref_image_url,
+                "white_square_score": score1,
+                "black_square_score": score2,
+                "status": "success"
+            })
+            
+        except Exception as e:
+            return jsonify({
+                "error": str(e),
+                "status": "error"
+            }), 500
 
     @app.errorhandler(404)
     def not_found(error):
