@@ -91,19 +91,40 @@ def create_app():
 
         emit("player_joined", player, to=game_id)
 
+        # Update game status to ready when two players have joined
         if len(game["players"]) == 2:
-            game["status"] = "active"
-            reference_image = game["reference_image"]
-            socketio.emit(
-                "game_start", {"reference_image": reference_image}, to=game_id
-            )
-
-            # Set timer for 30 seconds
-            socketio.sleep(30)
-            game["status"] = "finished"
-            socketio.emit("time_up", to=game_id)
+            game["status"] = "ready"
 
         return {"player_id": player_id}
+
+    @socketio.on("start_game")
+    def handle_start_game(data):
+        game_id = data.get("game_id")
+        player_id = data.get("player_id")
+
+        if game_id not in games:
+            emit("error", {"message": "Game not found"})
+            return
+
+        game = games[game_id]
+
+        # Verify this is from the first player (creator)
+        if not game["players"] or player_id != game["players"][0]["id"]:
+            emit("error", {"message": "Only the game creator can start the game"})
+            return
+
+        if len(game["players"]) < 2:
+            emit("error", {"message": "Need at least 2 players to start"})
+            return
+
+        game["status"] = "active"
+        reference_image = game["reference_image"]
+        socketio.emit("game_start", {"reference_image": reference_image}, to=game_id)
+
+        # Set timer for 30 seconds
+        socketio.sleep(30)
+        game["status"] = "finished"
+        socketio.emit("time_up", to=game_id)
 
     @socketio.on("submit_drawing")
     def handle_submit_drawing(data):
@@ -154,11 +175,11 @@ def create_app():
             to=game_id,
         )
 
+        # If both players are ready and one is the creator, set status to ready
         if len(game["ready_for_next"]) == 2:
-            # Reset game for new round
-            game["status"] = "active"
+            # Reset game for new round but require manual start
+            game["status"] = "ready"
             game["drawings"] = {}
-            game["ready_for_next"] = set()
 
             # Ensure we pick a different reference image than the previous one
             current_image = game["reference_image"]
@@ -167,15 +188,6 @@ def create_app():
                 available_images = reference_images
 
             game["reference_image"] = random.choice(available_images)
-
-            socketio.emit(
-                "game_start", {"reference_image": game["reference_image"]}, to=game_id
-            )
-
-            # Set timer for 30 seconds
-            socketio.sleep(30)
-            game["status"] = "finished"
-            socketio.emit("time_up", to=game_id)
 
     @app.errorhandler(404)
     def not_found(error):

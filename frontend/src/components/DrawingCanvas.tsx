@@ -60,7 +60,7 @@ const DrawingCanvas = ({ onSave, isTimerRunning }: DrawingCanvasProps) => {
   return (
     <div className="w-full">
       <div className="w-full mb-4">
-        <div className="border border-gray-300 rounded-lg">
+        <div className="border border-base-300 rounded-lg">
           <ReactSketchCanvas
             ref={canvasRef}
             width="100%"
@@ -74,19 +74,47 @@ const DrawingCanvas = ({ onSave, isTimerRunning }: DrawingCanvasProps) => {
           />
         </div>
       </div>
-      <div className="flex gap-3">
+      <div className="join w-full">
         <button
           onClick={handleUndo}
           disabled={!canDraw}
-          className="flex-1 bg-blue-500 text-white py-2 px-4 rounded-lg font-semibold disabled:bg-gray-300 disabled:cursor-not-allowed"
+          className="btn btn-primary join-item flex-1"
         >
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            className="h-5 w-5 mr-1"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth={2}
+              d="M3 10h10a4 4 0 0 1 0 8h-4m-6-8l4-4m0 0L3 2m4 4H3"
+            />
+          </svg>
           Undo
         </button>
         <button
           onClick={handleClear}
           disabled={!canDraw}
-          className="flex-1 bg-blue-500 text-white py-2 px-4 rounded-lg font-semibold disabled:bg-gray-300 disabled:cursor-not-allowed"
+          className="btn btn-error join-item flex-1"
         >
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            className="h-5 w-5 mr-1"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth={2}
+              d="M6 18L18 6M6 6l12 12"
+            />
+          </svg>
           Clear
         </button>
       </div>

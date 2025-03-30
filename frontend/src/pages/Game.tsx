@@ -26,7 +26,7 @@ const Game = () => {
 
   const [playerId, setPlayerId] = useState<string | null>(null);
   const [gameStatus, setGameStatus] = useState<
-    "waiting" | "active" | "finished"
+    "waiting" | "ready" | "active" | "finished"
   >("waiting");
   const [players, setPlayers] = useState<Array<{ id: string; name: string }>>(
     []
@@ -39,6 +39,7 @@ const Game = () => {
   const [loadingTimeout, setLoadingTimeout] = useState(false);
   const [latestDrawing, setLatestDrawing] = useState<string | null>(null);
   const [playersReady, setPlayersReady] = useState<string[]>([]);
+  const [startingGame, setStartingGame] = useState(false);
 
   useEffect(() => {
     if (!gameId || !state?.playerName) {
@@ -52,7 +53,9 @@ const Game = () => {
       try {
         const gameInfo = await apiService.getGameInfo(gameId);
         setPlayers(gameInfo.players);
-        setGameStatus(gameInfo.status as "waiting" | "active" | "finished");
+        setGameStatus(
+          gameInfo.status as "waiting" | "ready" | "active" | "finished"
+        );
 
         if (gameInfo.reference_image) {
           setReferenceImage(gameInfo.reference_image);
@@ -80,11 +83,17 @@ const Game = () => {
         }
         return [...prev, player];
       });
+
+      // If two players have joined, update status to ready
+      if (players.length === 1) {
+        setGameStatus("ready");
+      }
     });
 
     socketService.onGameStart((data) => {
       console.log("Game started with reference image:", data.reference_image);
       setGameStatus("active");
+      setStartingGame(false);
       setReferenceImage(data.reference_image);
       setGameResults(null);
       setPlayAgainRequested(false);
@@ -129,6 +138,13 @@ const Game = () => {
     };
   }, [gameId, navigate, state]);
 
+  // Update to detect when players.length changes
+  useEffect(() => {
+    if (players.length === 2 && gameStatus === "waiting") {
+      setGameStatus("ready");
+    }
+  }, [players, gameStatus]);
+
   useEffect(() => {
     if (gameStatus === "finished" && gameId && playerId && latestDrawing) {
       console.log("Game status changed to finished, submitting drawing now");
@@ -162,6 +178,13 @@ const Game = () => {
     }
   };
 
+  const handleStartGame = () => {
+    if (gameId && playerId && state.isCreator) {
+      setStartingGame(true);
+      socketService.startGame(gameId, playerId);
+    }
+  };
+
   const getOtherPlayer = () => {
     if (players.length < 2 || !playerId) return null;
     return players.find((p) => p.id !== playerId) || null;
@@ -174,15 +197,16 @@ const Game = () => {
 
   if (error) {
     return (
-      <div className="max-w-xl mx-auto my-24 p-8 text-center bg-white rounded-lg shadow-md">
-        <h2 className="text-2xl font-bold text-red-600 mb-5">Error</h2>
-        <p className="mb-6">{error}</p>
-        <button
-          onClick={() => navigate("/")}
-          className="px-6 py-3 bg-blue-500 text-white font-semibold rounded-lg"
-        >
-          Back to Home
-        </button>
+      <div className="card max-w-xl mx-auto my-24 bg-base-100 shadow-xl">
+        <div className="card-body items-center text-center">
+          <h2 className="card-title text-2xl font-bold text-error">Error</h2>
+          <p className="mb-6">{error}</p>
+          <div className="card-actions">
+            <button onClick={() => navigate("/")} className="btn btn-primary">
+              Back to Home
+            </button>
+          </div>
+        </div>
       </div>
     );
   }
@@ -190,43 +214,78 @@ const Game = () => {
   return (
     <div className="p-5">
       <div className="text-center mb-8">
-        <h1 className="text-4xl font-bold text-blue-500 mb-5">
+        <h1 className="text-4xl font-bold text-primary mb-5">
           Speed Sketch Showdown
         </h1>
-        {gameStatus === "waiting" && (
-          <div className="max-w-2xl mx-auto bg-white p-8 rounded-lg shadow-md">
-            <h2 className="text-2xl font-bold mb-4">Waiting for Players</h2>
-            <p className="mb-6">
-              {players.length === 1
-                ? "Waiting for another player to join..."
-                : "Game will start when both players are ready"}
-            </p>
-            <div className="p-4 mb-6 bg-gray-50 rounded-lg">
-              <p className="mb-2">Share this link with a friend:</p>
-              <div className="flex">
-                <input
-                  type="text"
-                  readOnly
-                  value={`${window.location.origin}/game/${gameId}`}
-                  className="flex-1 p-2 border border-gray-300 rounded-l-lg"
-                />
-                <button
-                  onClick={handleCopyGameLink}
-                  className="px-4 py-2 bg-blue-500 text-white rounded-r-lg"
-                >
-                  {copied ? "Copied!" : "Copy"}
-                </button>
+        {(gameStatus === "waiting" || gameStatus === "ready") && (
+          <div className="card max-w-2xl mx-auto bg-base-100 shadow-xl">
+            <div className="card-body">
+              <h2 className="card-title text-2xl font-bold mb-4 justify-center">
+                {gameStatus === "waiting"
+                  ? "Waiting for Players"
+                  : "Ready to Start"}
+              </h2>
+
+              {gameStatus === "waiting" && (
+                <p className="mb-6">Waiting for another player to join...</p>
+              )}
+
+              {gameStatus === "ready" && (
+                <p className="mb-6">
+                  {state.isCreator
+                    ? "All players have joined! Click start when you're ready."
+                    : "All players have joined! Waiting for the host to start the game..."}
+                </p>
+              )}
+
+              <div className="p-4 mb-6 bg-base-200 rounded-lg">
+                <p className="mb-2">Share this link with a friend:</p>
+                <div className="join w-full">
+                  <input
+                    type="text"
+                    readOnly
+                    value={`${window.location.origin}/game/${gameId}`}
+                    className="input input-bordered join-item w-full"
+                  />
+                  <button
+                    onClick={handleCopyGameLink}
+                    className="btn btn-primary join-item"
+                  >
+                    {copied ? "Copied!" : "Copy"}
+                  </button>
+                </div>
               </div>
-            </div>
-            <div className="mt-6">
-              <h3 className="font-bold mb-2">Players:</h3>
-              <ul className="space-y-2">
-                {players.map((player) => (
-                  <li key={player.id} className="p-3 bg-gray-50 rounded-lg">
-                    {player.name} {playerId === player.id ? "(You)" : ""}
-                  </li>
-                ))}
-              </ul>
+
+              <div className="mt-6">
+                <h3 className="font-bold mb-2">Players:</h3>
+                <ul className="space-y-2">
+                  {players.map((player) => (
+                    <li key={player.id} className="p-3 bg-base-200 rounded-lg">
+                      {player.name} {playerId === player.id ? "(You)" : ""}
+                      {state.isCreator && playerId === player.id && " (Host)"}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+
+              {gameStatus === "ready" && state.isCreator && (
+                <div className="card-actions justify-center mt-6">
+                  <button
+                    onClick={handleStartGame}
+                    className="btn btn-primary btn-lg"
+                    disabled={startingGame}
+                  >
+                    {startingGame ? (
+                      <>
+                        <span className="loading loading-spinner loading-sm"></span>
+                        Starting Game...
+                      </>
+                    ) : (
+                      "Start Game"
+                    )}
+                  </button>
+                </div>
+              )}
             </div>
           </div>
         )}
@@ -235,21 +294,24 @@ const Game = () => {
       {gameStatus === "active" && (
         <div className="flex flex-col items-center">
           <div className="flex flex-col w-full max-w-3xl mx-auto gap-6">
-            <div className="bg-white p-6 rounded-lg shadow-md">
-              <h3 className="text-xl font-bold mb-4 text-blue-500">
-                Reference Image
-              </h3>
-              {referenceImage ? (
-                <img
-                  src={referenceImage}
-                  alt="Reference"
-                  className="w-full max-h-80 object-contain border border-gray-300 rounded-lg"
-                />
-              ) : (
-                <div className="w-full h-40 flex items-center justify-center bg-gray-100 rounded-lg">
-                  Loading reference image...
-                </div>
-              )}
+            <div className="card bg-base-100 shadow-xl">
+              <div className="card-body">
+                <h3 className="card-title text-xl font-bold mb-4 text-primary">
+                  Reference Image
+                </h3>
+                {referenceImage ? (
+                  <img
+                    src={referenceImage}
+                    alt="Reference"
+                    className="w-full max-h-80 object-contain border border-base-300 rounded-lg"
+                  />
+                ) : (
+                  <div className="w-full h-40 flex items-center justify-center bg-base-200 rounded-lg">
+                    <span className="loading loading-spinner loading-md"></span>
+                    <span className="ml-2">Loading reference image...</span>
+                  </div>
+                )}
+              </div>
             </div>
             <div className="flex justify-center my-5">
               <Timer
@@ -258,121 +320,140 @@ const Game = () => {
                 onTimeUp={() => {}}
               />
             </div>
-            <div className="bg-white p-6 rounded-lg shadow-md">
-              <h3 className="text-xl font-bold mb-4 text-blue-500">
-                Your Drawing
-              </h3>
-              <DrawingCanvas
-                onSave={handleDrawingSave}
-                isTimerRunning={gameStatus === "active"}
-              />
+            <div className="card bg-base-100 shadow-xl">
+              <div className="card-body">
+                <h3 className="card-title text-xl font-bold mb-4 text-primary">
+                  Your Drawing
+                </h3>
+                <DrawingCanvas
+                  onSave={handleDrawingSave}
+                  isTimerRunning={gameStatus === "active"}
+                />
+              </div>
             </div>
           </div>
         </div>
       )}
 
       {gameStatus === "finished" && !gameResults && (
-        <div className="max-w-4xl mx-auto bg-white p-8 rounded-lg shadow-md">
-          <h2 className="text-2xl font-bold text-center mb-8 text-blue-500">
-            Time's Up!
-          </h2>
-          <div className="text-center p-8">
-            <div className="mb-8">
-              <div className="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500"></div>
-            </div>
-            <p className="text-lg mb-4">
-              Processing drawings and calculating results...
-            </p>
-            <p className="text-md text-gray-600">
-              {loadingTimeout
-                ? "Taking longer than expected. Make sure both players have submitted drawings."
-                : "This should only take a moment"}
-            </p>
-            {loadingTimeout && (
-              <div className="mt-8">
-                <button
-                  onClick={() => navigate("/")}
-                  className="px-6 py-3 bg-blue-500 text-white font-semibold rounded-lg"
-                >
-                  Back to Home
-                </button>
+        <div className="card max-w-4xl mx-auto bg-base-100 shadow-xl">
+          <div className="card-body text-center">
+            <h2 className="card-title text-2xl font-bold text-center mb-8 text-primary justify-center">
+              Time's Up!
+            </h2>
+            <div className="text-center p-8">
+              <div className="mb-8">
+                <span className="loading loading-spinner loading-lg text-primary"></span>
               </div>
-            )}
+              <p className="text-lg mb-4">
+                Processing drawings and calculating results...
+              </p>
+              <p className="text-md text-base-content/60">
+                {loadingTimeout
+                  ? "Taking longer than expected. Make sure both players have submitted drawings."
+                  : "This should only take a moment"}
+              </p>
+              {loadingTimeout && (
+                <div className="mt-8">
+                  <button
+                    onClick={() => navigate("/")}
+                    className="btn btn-primary"
+                  >
+                    Back to Home
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
         </div>
       )}
 
       {gameStatus === "finished" && gameResults && (
-        <div className="max-w-4xl mx-auto bg-white p-8 rounded-lg shadow-md">
-          <h2 className="text-2xl font-bold text-center mb-8 text-blue-500">
-            Game Results
-          </h2>
+        <div className="card max-w-4xl mx-auto bg-base-100 shadow-xl">
+          <div className="card-body">
+            <h2 className="card-title text-2xl font-bold text-center mb-8 text-primary justify-center">
+              Game Results
+            </h2>
 
-          <div className="grid gap-6 mb-8">
-            <div className="text-center">
-              <h3 className="text-xl font-bold mb-4 text-blue-500">
-                Reference Image
-              </h3>
-              <img
-                src={gameResults.reference_image}
-                alt="Reference"
-                className="max-w-full max-h-60 object-contain mx-auto border border-gray-300 rounded-lg"
-              />
-            </div>
+            <div className="grid gap-6 mb-8">
+              <div className="text-center">
+                <h3 className="text-xl font-bold mb-4 text-primary">
+                  Reference Image
+                </h3>
+                <img
+                  src={gameResults.reference_image}
+                  alt="Reference"
+                  className="max-w-full max-h-60 object-contain mx-auto border border-base-300 rounded-lg"
+                />
+              </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              {players.map((player) => (
-                <div
-                  key={player.id}
-                  className="p-6 bg-gray-50 rounded-lg text-center"
-                >
-                  <h3 className="text-xl font-bold mb-3 text-blue-500">
-                    {player.name} {playerId === player.id ? "(You)" : ""}
-                  </h3>
-                  {gameResults.drawings[player.id] ? (
-                    <>
-                      <img
-                        src={gameResults.drawings[player.id]}
-                        alt={`${player.name}'s drawing`}
-                        className="w-full max-h-60 object-contain border border-gray-300 bg-white rounded-lg mb-4"
-                      />
-                      <p className="text-xl font-bold text-gray-700">
-                        Similarity: {gameResults.scores[player.id]}%
-                        {gameResults.winner === player.id && (
-                          <span className="text-green-500 ml-2">(Winner!)</span>
-                        )}
-                      </p>
-                    </>
-                  ) : (
-                    <div className="h-48 flex items-center justify-center bg-gray-200 text-gray-600 rounded-lg">
-                      No drawing submitted
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                {players.map((player) => (
+                  <div
+                    key={player.id}
+                    className={`card bg-base-100 shadow-md ${
+                      gameResults.winner === player.id
+                        ? "border-4 border-success"
+                        : ""
+                    }`}
+                  >
+                    <div className="card-body">
+                      <h3 className="card-title text-xl font-bold mb-3 text-primary justify-center">
+                        {player.name} {playerId === player.id ? "(You)" : ""}
+                      </h3>
+                      {gameResults.drawings[player.id] ? (
+                        <>
+                          <img
+                            src={gameResults.drawings[player.id]}
+                            alt={`${player.name}'s drawing`}
+                            className="w-full max-h-60 object-contain border border-base-300 bg-base-100 rounded-lg mb-4"
+                          />
+                          <p className="text-xl font-bold text-base-content text-center">
+                            Similarity: {gameResults.scores[player.id]}%
+                            {gameResults.winner === player.id && (
+                              <span className="badge badge-success ml-2">
+                                Winner!
+                              </span>
+                            )}
+                          </p>
+                        </>
+                      ) : (
+                        <div className="h-48 flex items-center justify-center bg-base-200 text-base-content/60 rounded-lg">
+                          No drawing submitted
+                        </div>
+                      )}
                     </div>
-                  )}
-                </div>
-              ))}
+                  </div>
+                ))}
+              </div>
             </div>
-          </div>
 
-          <div className="text-center mt-8">
-            {isOtherPlayerReady() && !playAgainRequested && (
-              <p className="text-green-500 mb-4">
-                {getOtherPlayer()?.name} wants to play again!
-              </p>
-            )}
-            {playAgainRequested && isOtherPlayerReady() && (
-              <p className="text-blue-500 mb-4">
-                Both players ready! Waiting to start...
-              </p>
-            )}
-            <button
-              onClick={handlePlayAgain}
-              disabled={playAgainRequested}
-              className="px-8 py-4 text-xl bg-green-500 text-white rounded-lg font-bold disabled:bg-gray-300 disabled:cursor-not-allowed"
-            >
-              {playAgainRequested
-                ? "Waiting for other player..."
-                : "Play Again"}
-            </button>
+            <div className="text-center mt-8">
+              {isOtherPlayerReady() && !playAgainRequested && (
+                <div className="alert alert-success mb-4">
+                  <span>{getOtherPlayer()?.name} wants to play again!</span>
+                </div>
+              )}
+              {playAgainRequested && isOtherPlayerReady() && (
+                <div className="alert alert-info mb-4">
+                  <span>Both players ready! Waiting to start...</span>
+                </div>
+              )}
+              <button
+                onClick={handlePlayAgain}
+                disabled={playAgainRequested}
+                className="btn btn-success btn-lg"
+              >
+                {playAgainRequested ? (
+                  <>
+                    <span className="loading loading-spinner loading-sm"></span>{" "}
+                    Waiting for other player...
+                  </>
+                ) : (
+                  "Play Again"
+                )}
+              </button>
+            </div>
           </div>
         </div>
       )}
